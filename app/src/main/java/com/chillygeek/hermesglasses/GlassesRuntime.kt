@@ -48,6 +48,9 @@ object GlassesRuntime {
   /** Called with each spoken sentence so the UI can show progress. */
   @Volatile var onReply: ((String) -> Unit)? = null
 
+  /** Called when a turn fails, so the UI can surface it. */
+  @Volatile var onError: ((String) -> Unit)? = null
+
   @Volatile private var initialized = false
 
   fun init(context: Context) {
@@ -105,7 +108,8 @@ object GlassesRuntime {
             }
       } catch (e: Exception) {
         Log.e(TAG, "turn failed: ${e.message}", e)
-        onReply?.invoke("Error: ${e.message}")
+        onReply?.invoke("")
+        onError?.invoke(e.message ?: "turn failed")
       } finally {
         conversationBusy = false
       }

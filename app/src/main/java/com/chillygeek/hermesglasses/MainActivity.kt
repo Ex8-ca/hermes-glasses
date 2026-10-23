@@ -4,13 +4,18 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
-import android.view.MotionEvent
-import android.widget.Button
-import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.chillygeek.hermesglasses.ui.GlassesScreen
+import com.chillygeek.hermesglasses.ui.HermesTheme
 import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
@@ -29,17 +34,12 @@ import kotlin.coroutines.resume
  * [GlassesService], so locking the screen does not end it. This activity is the
  * UI and the permission surface — it can go away at any time.
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
   companion object {
     private const val TAG = "HermesGlasses"
     private const val REQ_AUDIO = 1001
   }
-
-  private lateinit var statusView: TextView
-  private lateinit var transcriptView: TextView
-  private lateinit var toggleButton: Button
-  private lateinit var talkButton: Button
 
   private var permissionContinuation: kotlin.coroutines.Continuation<PermissionStatus>? = null
 
@@ -47,66 +47,97 @@ class MainActivity : AppCompatActivity() {
    * DAT camera permission is granted through the Meta AI app, not the Android
    * permission dialog, so it needs its own activity-result contract.
    */
-  private val permissionLauncher =
+  private val datPermissionLauncher =
       registerForActivityResult(Wearables.RequestPermissionContract()) { result ->
         val status = result.getOrElse { PermissionStatus.Denied }
         permissionContinuation?.resume(status)
         permissionContinuation = null
       }
 
+  private val bluetoothPermissionLauncher =
+      registerForActivityResult(RequestMultiplePermissions()) { results ->
+        val denied = results.filterValues { !it }.keys
+        if (denied.isEmpty()) {
+          initializeDat()
+        } else {
+          Log.e(TAG, "Bluetooth permissions denied: $denied")
+        }
+      }
+
+  private val audioPermissionLauncher =
+      registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
+          granted ->
+        if (granted) {
+          GlassesRuntime.controller.register(this)
+        } else {
+          Log.e(TAG, "microphone permission denied")
+        }
+      }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    setContentView(R.layout.activity_main)
-
     GlassesRuntime.init(applicationContext)
 
-    statusView = findViewById(R.id.status)
-    transcriptView = findViewById(R.id.transcript)
-    toggleButton = findViewById(R.id.toggle)
-    talkButton = findViewById(R.id.talk)
-
-    findViewById<Button>(R.id.register).setOnClickListener { register() }
-    toggleButton.setOnClickListener { toggleStreaming() }
-    findViewById<Button>(R.id.reset_session).setOnClickListener {
-      lifecycleScope.launch {
-        GlassesRuntime.bridge.resetSession()
-        transcriptView.text = "New conversation."
-      }
-    }
-
-    // Push-to-talk: hold to speak, release to send.
-    talkButton.setOnTouchListener { _, event ->
-      when (event.action) {
-        MotionEvent.ACTION_DOWN -> {
-          GlassesRuntime.startListening()
-          talkButton.text = "Listening…"
-          true
-        }
-        MotionEvent.ACTION_UP,
-        MotionEvent.ACTION_CANCEL -> {
-          GlassesRuntime.stopListening()
-          talkButton.text = "Hold to talk"
-          true
-        }
-        else -> false
-      }
-    }
-
-    GlassesRuntime.onTranscript = { text -> transcriptView.text = "You: $text" }
-    GlassesRuntime.onReply = { text -> transcriptView.text = "Hermes: $text" }
-
-    lifecycleScope.launch {
-      GlassesRuntime.controller.state.collect { state ->
-        statusView.text = describe(state)
-        toggleButton.text = if (state is GlassesController.State.Streaming) "Stop" else "Start"
-      }
-    }
-
-    // The DAT SDK touches the Bluetooth adapter inside initialize(). On Android 12+
-    // that throws SecurityException unless BLUETOOTH_CONNECT is granted at
-    // runtime, so the runtime permissions MUST be granted before initialize() is
-    // called — this is the same ordering Meta's own sample uses.
+    // Wearables.initialize is required before any DAT API call, and it must
+    // come after the runtime Bluetooth permissions — see initializeDat().
     ensureRuntimePermissionsThenInitialize()
+
+    setContent {
+      HermesTheme {
+        var state by remember { mutableStateOf<GlassesController.State>(GlassesController.State.Idle) }
+        var transcript by remember { mutableStateOf("") }
+        var reply by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        var listening by remember { mutableStateOf(false) }
+        var statusText by remember { mutableStateOf("Not connected") }
+
+        LaunchedEffect(Unit) {
+          GlassesRuntime.controller.state.collect { s ->
+            state = s
+            statusText =
+                when (s) {
+                  is GlassesController.State.Idle -> "Idle"
+                  is GlassesController.State.Registering -> "Registering"
+                  is GlassesController.State.Ready -> "Registered"
+                  is GlassesController.State.Streaming -> "Live"
+                  is GlassesController.State.Failed -> "Error"
+                }
+          }
+        }
+        LaunchedEffect(Unit) {
+          GlassesRuntime.onTranscript = { transcript = it }
+          GlassesRuntime.onReply = { reply = it }
+          GlassesRuntime.onError = { error = it }
+        }
+
+        GlassesScreen(
+            state = state,
+            statusText = statusText,
+            transcript = transcript,
+            reply = reply,
+            error = error,
+            listening = listening,
+            onRegister = { register() },
+            onToggleStream = { toggleStreaming() },
+            onTalkDown = {
+              listening = true
+              GlassesRuntime.startListening()
+            },
+            onTalkUp = {
+              listening = false
+              GlassesRuntime.stopListening()
+            },
+            onReset = {
+              lifecycleScope.launch {
+                GlassesRuntime.bridge.resetSession()
+                transcript = ""
+                reply = ""
+                error = null
+              }
+            },
+        )
+      }
+    }
   }
 
   /**
@@ -131,51 +162,27 @@ class MainActivity : AppCompatActivity() {
     if (missing.isEmpty()) {
       initializeDat()
     } else {
-      statusView.text = "Requesting Bluetooth permissions…"
       bluetoothPermissionLauncher.launch(missing.toTypedArray())
     }
   }
-
-  private val bluetoothPermissionLauncher =
-      registerForActivityResult(RequestMultiplePermissions()) { results ->
-        val denied = results.filterValues { !it }.keys
-        if (denied.isNotEmpty()) {
-          statusView.text = "Bluetooth permission denied — the DAT SDK cannot scan for glasses."
-          Log.e(TAG, "denied permissions: $denied")
-          return@registerForActivityResult
-        }
-        initializeDat()
-      }
 
   /** Initialize the DAT SDK. Must run after BLUETOOTH_CONNECT is granted. */
   private fun initializeDat() {
     try {
       Wearables.initialize(this).onFailure { error, _ ->
         Log.e(TAG, "DAT initialize failed: ${error.description}")
-        statusView.text = "DAT init failed: ${error.description}"
       }
       GlassesRuntime.markDatReady()
-      statusView.text = "Ready. Tap Register with glasses."
     } catch (e: Throwable) {
       Log.e(TAG, "DAT initialize threw: ${e.message}", e)
-      statusView.text = "DAT init crashed: ${e.message}"
     }
   }
-
-  private fun describe(state: GlassesController.State): String =
-      when (state) {
-        is GlassesController.State.Idle -> "Idle"
-        is GlassesController.State.Registering -> "Registering with glasses…"
-        is GlassesController.State.Ready -> "Registered. Ready to stream."
-        is GlassesController.State.Streaming -> "Streaming — ${state.frames} frames"
-        is GlassesController.State.Failed -> "Error: ${state.reason}"
-      }
 
   // ------------------------------------------------------------------ registration
 
   private fun register() {
     if (!hasAudioPermission()) {
-      requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO)
+      audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
       return
     }
     GlassesRuntime.controller.register(this)
@@ -184,21 +191,6 @@ class MainActivity : AppCompatActivity() {
   private fun hasAudioPermission(): Boolean =
       ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
           PackageManager.PERMISSION_GRANTED
-
-  override fun onRequestPermissionsResult(
-      requestCode: Int,
-      permissions: Array<out String>,
-      grantResults: IntArray,
-  ) {
-    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    if (requestCode == REQ_AUDIO) {
-      if (hasAudioPermission()) {
-        GlassesRuntime.controller.register(this)
-      } else {
-        statusView.text = "Microphone permission denied — cannot capture speech."
-      }
-    }
-  }
 
   // ------------------------------------------------------------------ streaming
 
@@ -212,7 +204,7 @@ class MainActivity : AppCompatActivity() {
     lifecycleScope.launch {
       val granted = requestCameraPermission()
       if (!granted) {
-        statusView.text = "Camera permission denied."
+        Log.e(TAG, "camera permission denied")
         return@launch
       }
       // Keep the conversation alive while the screen is off or the phone is
@@ -235,14 +227,8 @@ class MainActivity : AppCompatActivity() {
         suspendCancellableCoroutine<PermissionStatus> { cont ->
           permissionContinuation = cont
           cont.invokeOnCancellation { permissionContinuation = null }
-          permissionLauncher.launch(Permission.CAMERA)
+          datPermissionLauncher.launch(Permission.CAMERA)
         }
     return requested == PermissionStatus.Granted
-  }
-
-  override fun onDestroy() {
-    super.onDestroy()
-    // Deliberately do NOT stop the service or the runtime here — locking the
-    // screen destroys the activity, and the conversation must survive that.
   }
 }

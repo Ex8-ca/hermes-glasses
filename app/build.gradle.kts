@@ -3,13 +3,17 @@ import java.util.Properties
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.jetbrains.kotlin.android)
+  alias(libs.plugins.compose.compiler)
 }
 
 android {
   namespace = "com.chillygeek.hermesglasses"
   compileSdk = 36
 
-  buildFeatures { buildConfig = true }
+  buildFeatures {
+    buildConfig = true
+    compose = true
+  }
 
   defaultConfig {
     applicationId = "com.chillygeek.hermesglasses"
@@ -62,8 +66,15 @@ dependencies {
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.ktx)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.activity.compose)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.okhttp)
+
+  val composeBom = platform(libs.androidx.compose.bom)
+  implementation(composeBom)
+  implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.material.icons.extended)
 
   implementation(libs.mwdat.core)
   implementation(libs.mwdat.camera)
