@@ -159,6 +159,70 @@ on different networks, use a Tailscale or VPN address.
 6. **Speak** — each sentence is synthesized and pushed to the phone, which
    plays it out through the glasses over A2DP.
 
+A foreground service keeps the DAT session alive when the screen locks, so you
+can put the phone in your pocket and keep talking.
+
+## How do I actually call it?
+
+There are three ways to trigger a turn, in increasing order of effort:
+
+| Method | How | Needs |
+|---|---|---|
+| **Always listening** | Talk. The VAD detects the end of your sentence and sends it. | Stream running. Mic comes from the glasses (in-band PCM) or the phone. |
+| **Push to talk** | Hold the **Hold to talk** button, speak, release. | Stream running. |
+| **Wake word** | "Hey Meta, open Hermes Glasses" | A Wearables Developer Center app listing, a Beta release channel, Developer Mode **off**, and the "Launch with 'Hey Meta'" toggle in the Meta AI app. Not available in Developer Mode. |
+
+The voice-in path depends on your firmware (see the warning at the top). On
+firmware 129 the glasses mic works alongside the camera only via the noisy
+in-band path; if you want a clean beamformed mic, use the phone mic or earbuds
+instead and keep the camera for vision.
+
+### Turning the stream on and off
+
+- **Start** / **Stop** — opens and closes the DAT session (and the foreground
+  service).
+- **Hold to talk** — push-to-talk. Outside of holding it, incoming audio is
+  discarded, so the assistant only hears you while you press.
+- The notification has a **Stop** action so you can end the session without
+  opening the app.
+
+### Talking to it hands-free with the phone in your pocket
+
+This is the intended way to use it, and it works because the conversation runs in
+a foreground service, not in the Activity:
+
+1. Open the app, tap **Register with glasses**, tap **Start**.
+2. Put the phone away. The notification confirms it is live.
+3. Talk. Replies come back through the glasses speakers.
+
+---
+
+## Other projects doing this
+
+You are not first. There are at least 29 projects in this space — the most
+complete map is `straff2002/OpenGlasses` → `docs/ecosystem-review-2026-10.md`.
+
+| Project | Stars | Platform | Notes |
+|---|---|---|---|
+| [Intent-Lab/VisionClaw](https://github.com/Intent-Lab/VisionClaw) | 2.6k | iOS + Android | Gemini Live + OpenClaw. Uses LiveKit Cloud. Closest to this project. |
+| [affaan-m/JARVIS](https://github.com/affaan-m/JARVIS) | 530 | Python | OSINT platform streamed via glasses. |
+| [rayl15/OpenVision](https://github.com/rayl15/OpenVision) | 168 | iOS | MIT. Five backends incl. a Hermes Agent backend. |
+| [straff2002/OpenGlasses](https://github.com/straff2002/OpenGlasses) | 120 | iOS | The most complete product; offline MLX models, WebRTC POV, Display HUD. |
+| [prasanthsasikumar/hermes-glasses](https://github.com/prasanthsasikumar/hermes-glasses) | 24 | iOS | MIT. Closest in spirit — Hermes bridge mode plus vision. |
+| [rodcone/flutter_meta_wearables_dat](https://github.com/rodcone/flutter_meta_wearables_dat) | 15 | Flutter | A DAT plugin, not an app. |
+
+Two things worth knowing if you are choosing between them:
+
+**Almost all of them are iOS.** This project is one of very few Android ones.
+
+**Almost all of them avoid the glasses microphone.** Streaming mic audio over
+HFP/SCO alongside a camera session is exactly what breaks on firmware 129, so
+the industry answer is to use the phone mic (VisionClaw's Android sample uses
+`AudioRecord` with no `audioCodec` at all) or earbuds (one project has a
+"Headset mode" where the mic and TTS live in the earbuds). This project uses
+the glasses' own microphone via the in-band path, which is the unusual choice
+and the only one that keeps the mic on your face.
+
 ---
 
 ## Credits and licensing
