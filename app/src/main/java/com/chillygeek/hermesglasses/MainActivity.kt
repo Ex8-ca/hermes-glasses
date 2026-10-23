@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions
@@ -23,6 +24,10 @@ import kotlin.coroutines.resume
  * Flow: register with the glasses -> open a DAT session -> stream camera +
  * in-band mic audio -> on each completed utterance, transcribe it, ask the
  * bridge, and play the spoken reply out through the glasses.
+ *
+ * The conversation itself lives in [GlassesRuntime] and is kept alive by
+ * [GlassesService], so locking the screen does not end it. This activity is the
+ * UI and the permission surface — it can go away at any time.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -31,17 +36,11 @@ class MainActivity : AppCompatActivity() {
     private const val REQ_AUDIO = 1001
   }
 
-  private lateinit var bridge: BridgeClient
-  private lateinit var controller: GlassesController
-  private lateinit var player: SpeechPlayer
-  private lateinit var splitter: UtteranceSplitter
-
   private lateinit var statusView: TextView
   private lateinit var transcriptView: TextView
   private lateinit var toggleButton: Button
+  private lateinit var talkButton: Button
 
-  private var conversationBusy = false
-  private var lastFrameJpeg: ByteArray? = null
   private var permissionContinuation: kotlin.coroutines.Continuation<PermissionStatus>? = null
 
   /**
@@ -59,29 +58,45 @@ class MainActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
     setContentView(R.layout.activity_main)
 
-    bridge = BridgeClient()
-    player = SpeechPlayer(this)
-    splitter = UtteranceSplitter()
-    controller = GlassesController(this, lifecycleScope)
+    GlassesRuntime.init(applicationContext)
 
     statusView = findViewById(R.id.status)
     transcriptView = findViewById(R.id.transcript)
     toggleButton = findViewById(R.id.toggle)
+    talkButton = findViewById(R.id.talk)
 
     findViewById<Button>(R.id.register).setOnClickListener { register() }
     toggleButton.setOnClickListener { toggleStreaming() }
     findViewById<Button>(R.id.reset_session).setOnClickListener {
       lifecycleScope.launch {
-        bridge.resetSession()
+        GlassesRuntime.bridge.resetSession()
         transcriptView.text = "New conversation."
       }
     }
 
-    controller.onAudioChunk = { pcm -> onMicAudio(pcm) }
-    controller.onJpegFrame = { jpeg -> lastFrameJpeg = jpeg }
+    // Push-to-talk: hold to speak, release to send.
+    talkButton.setOnTouchListener { _, event ->
+      when (event.action) {
+        MotionEvent.ACTION_DOWN -> {
+          GlassesRuntime.startListening()
+          talkButton.text = "Listening…"
+          true
+        }
+        MotionEvent.ACTION_UP,
+        MotionEvent.ACTION_CANCEL -> {
+          GlassesRuntime.stopListening()
+          talkButton.text = "Hold to talk"
+          true
+        }
+        else -> false
+      }
+    }
+
+    GlassesRuntime.onTranscript = { text -> transcriptView.text = "You: $text" }
+    GlassesRuntime.onReply = { text -> transcriptView.text = "Hermes: $text" }
 
     lifecycleScope.launch {
-      controller.state.collect { state ->
+      GlassesRuntime.controller.state.collect { state ->
         statusView.text = describe(state)
         toggleButton.text = if (state is GlassesController.State.Streaming) "Stop" else "Start"
       }
@@ -108,7 +123,10 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.BLUETOOTH_SCAN,
             Manifest.permission.ACCESS_FINE_LOCATION,
         )
-    val missing = needed.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+    val missing =
+        needed.filter {
+          ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
 
     if (missing.isEmpty()) {
       initializeDat()
@@ -136,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         Log.e(TAG, "DAT initialize failed: ${error.description}")
         statusView.text = "DAT init failed: ${error.description}"
       }
-      controller.datReady = true
+      GlassesRuntime.markDatReady()
       statusView.text = "Ready. Tap Register with glasses."
     } catch (e: Throwable) {
       Log.e(TAG, "DAT initialize threw: ${e.message}", e)
@@ -160,7 +178,7 @@ class MainActivity : AppCompatActivity() {
       requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO)
       return
     }
-    controller.register(this)
+    GlassesRuntime.controller.register(this)
   }
 
   private fun hasAudioPermission(): Boolean =
@@ -175,7 +193,7 @@ class MainActivity : AppCompatActivity() {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     if (requestCode == REQ_AUDIO) {
       if (hasAudioPermission()) {
-        controller.register(this)
+        GlassesRuntime.controller.register(this)
       } else {
         statusView.text = "Microphone permission denied — cannot capture speech."
       }
@@ -185,17 +203,22 @@ class MainActivity : AppCompatActivity() {
   // ------------------------------------------------------------------ streaming
 
   private fun toggleStreaming() {
-    if (controller.state.value is GlassesController.State.Streaming) {
-      controller.stopStream()
-    } else {
-      lifecycleScope.launch {
-        val granted = requestCameraPermission()
-        if (!granted) {
-          statusView.text = "Camera permission denied."
-          return@launch
-        }
-        controller.startStream(includeAudio = true)
+    if (GlassesRuntime.controller.state.value is GlassesController.State.Streaming) {
+      GlassesRuntime.controller.stopStream()
+      GlassesService.stop(this)
+      return
+    }
+
+    lifecycleScope.launch {
+      val granted = requestCameraPermission()
+      if (!granted) {
+        statusView.text = "Camera permission denied."
+        return@launch
       }
+      // Keep the conversation alive while the screen is off or the phone is
+      // in your pocket.
+      GlassesService.start(this@MainActivity)
+      GlassesRuntime.controller.startStream(includeAudio = true)
     }
   }
 
@@ -217,48 +240,9 @@ class MainActivity : AppCompatActivity() {
     return requested == PermissionStatus.Granted
   }
 
-  // ------------------------------------------------------------------ conversation
-
-  /**
-   * Called with raw PCM from the glasses mic. The splitter decides when an
-   * utterance has ended; when it does, we run the full turn.
-   */
-  private fun onMicAudio(pcm: ByteArray) {
-    val utterance = splitter.push(pcm) ?: return
-    if (conversationBusy) return
-    conversationBusy = true
-    lifecycleScope.launch {
-      try {
-        val transcript = bridge.transcribe(utterance)
-        transcriptView.text = "You: $transcript"
-        if (transcript.isBlank()) return@launch
-
-        // Ship the latest camera frame so the reply can reference what is seen.
-        lastFrameJpeg?.let { bridge.uploadFrame(it) }
-
-        val turn =
-            bridge.ask(
-                text = transcript,
-                withImage = lastFrameJpeg != null,
-                agent = false,
-                onSpeech = { speech ->
-                  // Play each sentence as it arrives — this is what makes the
-                  // exchange feel like a conversation instead of a pause.
-                  player.play(speech.wav)
-                },
-            )
-        transcriptView.text = "You: $transcript\nHermes: ${turn.reply}"
-      } catch (e: Exception) {
-        Log.e(TAG, "turn failed: ${e.message}", e)
-        transcriptView.text = "Error: ${e.message}"
-      } finally {
-        conversationBusy = false
-      }
-    }
-  }
-
   override fun onDestroy() {
     super.onDestroy()
-    player.stop()
+    // Deliberately do NOT stop the service or the runtime here — locking the
+    // screen destroys the activity, and the conversation must survive that.
   }
 }
