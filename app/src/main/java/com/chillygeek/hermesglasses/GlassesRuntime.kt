@@ -180,12 +180,20 @@ object GlassesRuntime {
   /** Push-to-talk: start capturing speech. */
   fun startListening() {
     listening = true
+    // Drop any stale audio from the previous phrase, but keep the buffer
+    // otherwise — push-to-talk needs it to build the utterance.
     splitter.reset()
   }
 
-  /** Push-to-talk: stop capturing speech. */
+  /**
+   * Stop listening, but send whatever was said.
+   *
+   * The utterance is still sitting in the splitter's buffer waiting for the
+   * silence that would normally close it. Releasing the talk button is that
+   * signal, so flush it into a turn rather than discarding it.
+   */
   fun stopListening() {
     listening = false
-    splitter.reset()
+    splitter.flush()?.let { wav -> onMicAudio(wav) }
   }
 }

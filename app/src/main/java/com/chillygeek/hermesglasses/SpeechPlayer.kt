@@ -121,6 +121,15 @@ class UtteranceSplitter(
 ) {
   private val frameSamples = sampleRate * frameMs / 1000
   private val buffer = ArrayList<Byte>(frameSamples * 64)
+
+  /**
+   * Audio captured since the utterance opened.
+   *
+   * The scan buffer is consumed as it is examined, so the utterance needs its
+   * own copy — otherwise the words are gone by the time the utterance closes.
+   */
+  private val utterance = ArrayList<Byte>(frameSamples * 128)
+
   private var voicedRun = 0
   private var silentRun = 0
   private var speaking = false
@@ -128,6 +137,9 @@ class UtteranceSplitter(
   /**
    * Feed PCM bytes. Returns a completed utterance as WAV bytes when one ends,
    * otherwise null.
+   *
+   * This mirrors the reference implementation in
+   * `bridge/tests/test_splitter.py`, which pins the behaviour.
    */
   fun push(pcm: ByteArray): ByteArray? {
     buffer.addAll(pcm.toList())
@@ -143,13 +155,20 @@ class UtteranceSplitter(
         silentRun = 0
         if (!speaking && voicedRun >= speechFramesToStart) {
           speaking = true
-          // Discard the leading silence frames that started the run.
+          // Start the utterance at the first voiced frame.
           val drop = (voicedRun - speechFramesToStart) * frameSamples
           if (drop > 0 && index - drop > 0) index -= drop
         }
       } else {
         silentRun++
         voicedRun = 0
+      }
+
+      if (speaking) {
+        // Copy the frame into the utterance AS IT IS SCANNED. Copying after the
+        // loop would find nothing — the scan buffer is consumed by it.
+        val start = maxOf(0, index - frameSamples)
+        utterance.addAll(buffer.subList(start, index))
       }
     }
     if (index > 0) buffer.subList(0, index).clear()
@@ -158,16 +177,37 @@ class UtteranceSplitter(
       speaking = false
       voicedRun = 0
       silentRun = 0
-      val utterance = buffer.toByteArray()
+      val bytes = utterance.toByteArray()
+      utterance.clear()
       buffer.clear()
-      return pcmToWav(utterance)
+      return pcmToWav(bytes)
     }
     return null
+  }
+
+  /**
+   * Return any buffered audio as a finished utterance, or null if there is
+   * nothing pending.
+   *
+   * This is what push-to-talk needs: when the user releases the button, the
+   * words they just spoke are still sitting in the buffer waiting for the
+   * silence that would normally close the utterance. Discarding them would
+   * throw away the whole request.
+   */
+  fun flush(): ByteArray? {
+    if (utterance.isEmpty() && buffer.isEmpty()) {
+      reset()
+      return null
+    }
+    val bytes = if (utterance.isNotEmpty()) utterance.toByteArray() else buffer.toByteArray()
+    reset()
+    return pcmToWav(bytes)
   }
 
   /** Drop any buffered audio — used when the user interrupts. */
   fun reset() {
     buffer.clear()
+    utterance.clear()
     voicedRun = 0
     silentRun = 0
     speaking = false
