@@ -128,6 +128,26 @@ audio plays while the rest is still being generated.
 
 ### 2. The Android app
 
+**Easiest — download the release APK.** No account, no adb pairing:
+
+```
+https://github.com/Ex8-ca/hermes-glasses/releases/download/v0.1.0/app-debug.apk
+```
+
+Sideload it, or push it with `adb install`.
+
+On first launch, set the **bridge address** in the app (Glasses → BRIDGE):
+
+```
+http://<your-bridge-host>:8790
+```
+
+A released APK cannot know your network, so the address is stored on the
+device and validated as you type — a partial address is rejected rather than
+silently pointing the app at nothing.
+
+**Or build it yourself:**
+
 ```bash
 cd app
 echo "sdk.dir=$ANDROID_HOME" > ../local.properties
@@ -136,8 +156,9 @@ echo "bridgeUrl=http://YOUR_BRIDGE_HOST:8790" >> ../local.properties
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-`bridgeUrl` is baked into the app at build time. If the phone and the bridge are
-on different networks, use a Tailscale or VPN address.
+`bridgeUrl` sets the address compiled into the build. The in-app setting
+overrides it. If the phone and the bridge are on different networks, use a
+Tailscale or VPN address.
 
 > Use a **debug build** for sideloading. It is signed with the standard Android
 > debug key, so it will not install over a Play Store version of the same
