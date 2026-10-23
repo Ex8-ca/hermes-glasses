@@ -1,0 +1,76 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (e.g. v1.0.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # setup-android can hang on an interactive "Review licenses (y/N)?"
+      # prompt, which fails the job. Accept every license up front.
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --licenses < /dev/null > /dev/null 2>&1 || true
+
+      - name: Provide SDK location
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" >> local.properties
+
+      - name: Build
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Determine tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF#refs/tags/}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --title "Hermes Glasses ${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            app/build/outputs/apk/debug/app-debug.apk \
+            || gh release upload "${{ steps.tag.outputs.tag }}" \
+                 app/build/outputs/apk/debug/app-debug.apk \
+                 --clobber
+
+      - name: Summary
+        run: |
+          {
+            echo "### Hermes Glasses ${{ steps.tag.outputs.tag }}"
+            echo ""
+            echo "Download \`app-debug.apk\` from the release assets."
+            echo ""
+            echo "The APK is signed with the standard Android **debug key** — it installs"
+            echo "by sideloading, but not over a Play Store build of the same package."
+          } >> "$GITHUB_STEP_SUMMARY"

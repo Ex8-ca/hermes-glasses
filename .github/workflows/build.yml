@@ -25,6 +25,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # setup-android can hang on an interactive "Review licenses (y/N)?"
+      # prompt, which fails the job. Accept every license up front.
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --licenses < /dev/null > /dev/null 2>&1 || true
+
       - name: Provide SDK location
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" >> local.properties
 
