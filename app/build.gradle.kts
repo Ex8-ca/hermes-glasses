@@ -18,8 +18,10 @@ android {
     versionCode = 1
     versionName = "1.0"
 
-    // Bridge server on the LAN box that runs Hermes. Override per build with
-    // -PbridgeUrl=... or by editing local.properties.
+    // Bridge server that the phone talks to. Override per build by putting
+    // bridgeUrl=... in local.properties. The default is the Android emulator's
+    // host alias so a first build works out of the box there; on a real device
+    // set it to the machine running the bridge.
     val props = Properties().apply {
       val f = rootDir.resolve("local.properties")
       if (f.exists()) f.inputStream().use { load(it) }
@@ -27,7 +29,7 @@ android {
     buildConfigField(
       "String",
       "BRIDGE_URL",
-      "\"${props.getProperty("bridgeUrl", "http://192.168.1.3:8790")}\"",
+      "\"${props.getProperty("bridgeUrl", "http://10.0.2.2:8790")}\"",
     )
 
     // Meta Wearables Device Access Toolkit setup. In Developer Mode both values
