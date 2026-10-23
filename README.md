@@ -168,14 +168,33 @@ There are three ways to trigger a turn, in increasing order of effort:
 
 | Method | How | Needs |
 |---|---|---|
-| **Always listening** | Talk. The VAD detects the end of your sentence and sends it. | Stream running. Mic comes from the glasses (in-band PCM) or the phone. |
+| **Always listening** | Talk. The VAD detects the end of your sentence and sends it. | Stream running. Mic comes from the headset, the phone, or the glasses. |
 | **Push to talk** | Hold the **Hold to talk** button, speak, release. | Stream running. |
 | **Wake word** | "Hey Meta, open Hermes Glasses" | A Wearables Developer Center app listing, a Beta release channel, Developer Mode **off**, and the "Launch with 'Hey Meta'" toggle in the Meta AI app. Not available in Developer Mode. |
 
-The voice-in path depends on your firmware (see the warning at the top). On
-firmware 129 the glasses mic works alongside the camera only via the noisy
-in-band path; if you want a clean beamformed mic, use the phone mic or earbuds
-instead and keep the camera for vision.
+### Audio routing: headset + glasses
+
+On firmware 129 the hands-free link must **not** be held by the glasses — opening it
+ends the camera session (see the warning at the top). So the app routes audio
+independently of the camera, and you pick both in the app:
+
+| | Microphone | Speaker |
+|---|---|---|
+| **Headset** (recommended) | Your earbuds/headphones | Your earbuds/headphones |
+| **Phone** | The phone's mic | The phone speaker |
+| **Glasses** | In-band PCM from the glasses | The glasses' speakers |
+
+Pair a Bluetooth headset and the app defaults to it. The glasses then carry **video
+only** — no hands-free link to the glasses at all, so the firmware bug never fires, the
+camera link keeps full bandwidth, and the mic is a proper beamformed one instead of
+raw in-band audio.
+
+The glasses' own speakers still work for playback if you prefer, but sending TTS to
+the glasses competes with the camera for Bluetooth bandwidth, so headset output is
+smoother.
+
+If you would rather not buy anything, the phone mic works today and the glasses mic
+still works via the in-band path — it is just noisy.
 
 ### Turning the stream on and off
 

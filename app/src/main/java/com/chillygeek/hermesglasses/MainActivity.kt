@@ -90,6 +90,9 @@ class MainActivity : ComponentActivity() {
         var error by remember { mutableStateOf<String?>(null) }
         var listening by remember { mutableStateOf(false) }
         var statusText by remember { mutableStateOf("Not connected") }
+        var micSource by remember { mutableStateOf(GlassesRuntime.micSource) }
+        var outputSink by remember { mutableStateOf(GlassesRuntime.outputSink) }
+        var headsetAvailable by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
           GlassesRuntime.controller.state.collect { s ->
@@ -108,6 +111,17 @@ class MainActivity : ComponentActivity() {
           GlassesRuntime.onTranscript = { transcript = it }
           GlassesRuntime.onReply = { reply = it }
           GlassesRuntime.onError = { error = it }
+          // A paired headset is detected once; the mic and speaker can then be
+          // pointed at it, which is the configuration that avoids the firmware
+          // 129 hands-free bug entirely.
+          headsetAvailable = GlassesRuntime.router.headsetScoDevice() != null
+          if (!headsetAvailable) {
+            // No headset: fall back to the phone mic and speaker.
+            micSource = AudioRouter.MicSource.PHONE
+            outputSink = AudioRouter.OutputSink.PHONE
+            GlassesRuntime.applyMicSource(AudioRouter.MicSource.PHONE)
+            GlassesRuntime.outputSink = AudioRouter.OutputSink.PHONE
+          }
         }
 
         GlassesScreen(
@@ -117,6 +131,17 @@ class MainActivity : ComponentActivity() {
             reply = reply,
             error = error,
             listening = listening,
+            micSource = micSource,
+            outputSink = outputSink,
+            headsetAvailable = headsetAvailable,
+            onMicSourceChange = { source ->
+              micSource = source
+              GlassesRuntime.applyMicSource(source)
+            },
+            onOutputSinkChange = { sink ->
+              outputSink = sink
+              GlassesRuntime.outputSink = sink
+            },
             onRegister = { register() },
             onToggleStream = { toggleStreaming() },
             onTalkDown = {
@@ -210,7 +235,13 @@ class MainActivity : ComponentActivity() {
       // Keep the conversation alive while the screen is off or the phone is
       // in your pocket.
       GlassesService.start(this@MainActivity)
-      GlassesRuntime.controller.startStream(includeAudio = true)
+      // Only ask the glasses for in-band audio when the glasses ARE the mic.
+      // With a headset or the phone mic, the camera link stays video-only —
+      // which is both simpler and kinder to the Bluetooth radio.
+      val mic = GlassesRuntime.micSource
+      GlassesRuntime.controller.startStream(
+          includeAudio = mic == AudioRouter.MicSource.GLASSES
+      )
     }
   }
 

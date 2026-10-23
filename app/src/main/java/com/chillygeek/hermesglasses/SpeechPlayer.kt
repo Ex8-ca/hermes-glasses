@@ -11,15 +11,22 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Plays synthesized speech out through the glasses speakers.
+ * Plays synthesized speech out through the glasses or a headset.
  *
  * The glasses are a Bluetooth A2DP sink, so playback is routed by setting the
  * media output device to the paired A2DP device. This is the *output* half and
  * is independent of the microphone capture path — on firmware 129 the two are
- * mutually exclusive only when the mic is routed over HFP/SCO, which is why
- * the camera session uses in-band PCM audio instead (see GlassesController).
+ * mutually exclusive only when the mic is routed over HFP/SCO *to the glasses*,
+ * which is why the camera session can use in-band PCM audio instead (see
+ * GlassesController).
+ *
+ * The output sink is selectable: a paired headset is preferred when you want to
+ * keep the camera link free (see [AudioRouter]).
  */
-class SpeechPlayer(private val context: Context) {
+class SpeechPlayer(
+  private val context: Context,
+  private val router: AudioRouter? = null,
+) {
 
   companion object {
     private const val TAG = "SpeechPlayer"
@@ -30,7 +37,7 @@ class SpeechPlayer(private val context: Context) {
 
   /** Play a WAV byte array. Returns when playback is queued (not when it ends). */
   @Synchronized
-  fun play(wav: ByteArray) {
+  fun play(wav: ByteArray, sink: AudioRouter.OutputSink = AudioRouter.OutputSink.GLASSES) {
     if (wav.isEmpty()) return
     try {
       stop()
@@ -48,8 +55,8 @@ class SpeechPlayer(private val context: Context) {
             setDataSource(tmp.absolutePath)
             prepare()
           }
-      // Route to the glasses if they are the active A2DP sink.
-      selectA2dpDevice(mp)
+      // Route to the chosen sink.
+      selectOutputDevice(mp, sink)
       mp.start()
       player = mp
       mp.setOnCompletionListener {
@@ -74,20 +81,21 @@ class SpeechPlayer(private val context: Context) {
     player = null
   }
 
-  private fun selectA2dpDevice(mp: MediaPlayer) {
+  private fun selectOutputDevice(mp: MediaPlayer, sink: AudioRouter.OutputSink) {
     try {
-      val a2dp =
-          audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
-            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-          }
-      if (a2dp != null) {
-        mp.setPreferredDevice(a2dp)
-        Log.i(TAG, "routed playback to ${a2dp.productName}")
+      val device =
+          router?.preferredOutputDevice(sink)
+              ?: audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+                it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+              }
+      if (device != null) {
+        mp.setPreferredDevice(device)
+        Log.i(TAG, "routed playback to ${device.productName} (sink=$sink)")
       } else {
-        Log.w(TAG, "no A2DP output device found; using default route")
+        Log.w(TAG, "no A2DP output device found; using the default route")
       }
     } catch (e: Exception) {
-      Log.w(TAG, "A2DP routing failed: ${e.message}")
+      Log.w(TAG, "output routing failed: ${e.message}")
     }
   }
 }

@@ -31,6 +31,14 @@ object GlassesRuntime {
     private set
   lateinit var splitter: UtteranceSplitter
     private set
+  lateinit var router: AudioRouter
+    private set
+
+  /** Where the microphone audio comes from. */
+  @Volatile var micSource: AudioRouter.MicSource = AudioRouter.MicSource.HEADSET
+
+  /** Where spoken replies are played. */
+  @Volatile var outputSink: AudioRouter.OutputSink = AudioRouter.OutputSink.HEADSET
 
   /** Latest camera frame as JPEG, uploaded to the bridge before each turn. */
   @Volatile var lastFrameJpeg: ByteArray? = null
@@ -58,12 +66,33 @@ object GlassesRuntime {
     initialized = true
 
     bridge = BridgeClient()
-    player = SpeechPlayer(context)
+    router = AudioRouter(context, scope)
+    player = SpeechPlayer(context, router)
     splitter = UtteranceSplitter()
     controller = GlassesController(context, scope)
 
-    controller.onAudioChunk = { pcm -> onMicAudio(pcm) }
+    // Glasses mic (in-band PCM) only — the headset/phone paths come from
+    // AudioRouter instead.
+    controller.onAudioChunk = { pcm ->
+      if (micSource == AudioRouter.MicSource.GLASSES) onMicAudio(pcm)
+    }
     controller.onJpegFrame = { jpeg -> lastFrameJpeg = jpeg }
+  }
+
+  /**
+   * Switch the microphone source.
+   *
+   * A headset is the recommended source on firmware 129: routing hands-free audio
+   * to the *glasses* ends the DAT camera session, so the glasses must not be
+   * the ones holding the SCO link.
+   */
+  fun applyMicSource(source: AudioRouter.MicSource) {
+    micSource = source
+    if (source == AudioRouter.MicSource.GLASSES) {
+      router.stopCapture()
+    } else {
+      router.startCapture(source) { pcm -> onMicAudio(pcm) }
+    }
   }
 
   /** Set once the DAT SDK has been initialized (permissions granted). */
@@ -98,7 +127,7 @@ object GlassesRuntime {
                 onSpeech = { speech ->
                   // Play each sentence as it arrives — this is what makes the
                   // exchange feel like a conversation instead of a pause.
-                  player.play(speech.wav)
+                  player.play(speech.wav, outputSink)
                   reply.append(speech.text)
                 },
             )

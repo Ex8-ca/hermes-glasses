@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chillygeek.hermesglasses.AudioRouter
 import com.chillygeek.hermesglasses.GlassesController
 
 /**
@@ -72,6 +73,11 @@ fun GlassesScreen(
     reply: String,
     error: String?,
     listening: Boolean,
+    micSource: AudioRouter.MicSource,
+    outputSink: AudioRouter.OutputSink,
+    headsetAvailable: Boolean,
+    onMicSourceChange: (AudioRouter.MicSource) -> Unit,
+    onOutputSinkChange: (AudioRouter.OutputSink) -> Unit,
     onRegister: () -> Unit,
     onToggleStream: () -> Unit,
     onTalkDown: () -> Unit,
@@ -137,6 +143,16 @@ fun GlassesScreen(
         if (error != null) {
           ErrorBanner(error)
         }
+        Spacer(Modifier.height(8.dp))
+
+        // ------------------------------------------------- audio routing
+        AudioRouting(
+            micSource = micSource,
+            outputSink = outputSink,
+            headsetAvailable = headsetAvailable,
+            onMicSourceChange = onMicSourceChange,
+            onOutputSinkChange = onOutputSinkChange,
+        )
         Spacer(Modifier.height(8.dp))
       }
 
@@ -270,6 +286,132 @@ private fun ErrorBanner(error: String) {
   }
 }
 
+/**
+ * Microphone and speaker routing.
+ *
+ * On glasses firmware 129 the hands-free link must NOT be held by the glasses —
+ * opening it ends the camera session. So the mic and the speaker are chosen
+ * independently: a paired headset for both is the recommended setup, with the
+ * glasses carrying nothing but the camera.
+ */
+@Composable
+private fun AudioRouting(
+    micSource: AudioRouter.MicSource,
+    outputSink: AudioRouter.OutputSink,
+    headsetAvailable: Boolean,
+    onMicSourceChange: (AudioRouter.MicSource) -> Unit,
+    onOutputSinkChange: (AudioRouter.OutputSink) -> Unit,
+) {
+  Column(
+      modifier =
+          Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(16.dp))
+              .background(AppColor.SurfaceElevated)
+              .border(1.dp, AppColor.Outline, RoundedCornerShape(16.dp))
+              .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    Text(
+        text = "AUDIO",
+        style = MaterialTheme.typography.labelSmall,
+        color = AppColor.OnSurfaceMuted,
+    )
+
+    RoutingRow(
+        label = "Microphone",
+        options =
+            listOf(
+                AudioRouter.MicSource.HEADSET to "Headset",
+                AudioRouter.MicSource.PHONE to "Phone",
+                AudioRouter.MicSource.GLASSES to "Glasses",
+            ),
+        selected = micSource,
+        enabledOptions =
+            if (headsetAvailable) emptySet() else setOf(AudioRouter.MicSource.HEADSET),
+        onSelect = onMicSourceChange,
+    )
+
+    RoutingRow(
+        label = "Speaker",
+        options =
+            listOf(
+                AudioRouter.OutputSink.HEADSET to "Headset",
+                AudioRouter.OutputSink.GLASSES to "Glasses",
+                AudioRouter.OutputSink.PHONE to "Phone",
+            ),
+        selected = outputSink,
+        enabledOptions =
+            if (headsetAvailable) emptySet() else setOf(AudioRouter.OutputSink.HEADSET),
+        onSelect = onOutputSinkChange,
+    )
+
+    if (micSource == AudioRouter.MicSource.GLASSES) {
+      Text(
+          text = "The glasses mic works with the camera on firmware 129 only via in-band PCM — unfiltered, so ambient noise is loud. A headset is better.",
+          style = MaterialTheme.typography.labelSmall,
+          color = AppColor.Yellow,
+      )
+    }
+  }
+}
+
+@Composable
+private fun <T> RoutingRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    enabledOptions: Set<T>,
+    onSelect: (T) -> Unit,
+) {
+  Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.bodyMedium,
+        color = AppColor.OnSurfaceMuted,
+        modifier = Modifier.width(86.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      options.forEach { (value, text) ->
+        val enabled = value !in enabledOptions
+        val isSelected = value == selected
+        Box(
+            modifier =
+                Modifier
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            isSelected -> AppColor.DeepBlue
+                            !enabled -> AppColor.Surface
+                            else -> AppColor.Surface
+                        }
+                    )
+                    .border(
+                        1.dp,
+                        if (isSelected) AppColor.DeepBlue else AppColor.Outline,
+                        CircleShape,
+                    )
+                    .clickableNoRipple(enabled = !enabled) { onSelect(value) }
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+        ) {
+          Text(
+              text = text,
+              style = MaterialTheme.typography.labelSmall,
+              color =
+                  when {
+                    isSelected -> Color.White
+                    !enabled -> AppColor.OnSurfaceMuted.copy(alpha = 0.4f)
+                    else -> AppColor.OnSurfaceMuted
+                  },
+          )
+        }
+      }
+    }
+  }
+}
 @Composable
 private fun ControlsRow(
     state: GlassesController.State,
@@ -368,9 +510,13 @@ private fun ControlsRow(
 }
 
 @Composable
-private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
-    this.clickable(
-        interactionSource = remember { MutableInteractionSource() },
-        indication = null,
-        onClick = onClick,
-    )
+private fun Modifier.clickableNoRipple(enabled: Boolean = true, onClick: () -> Unit): Modifier =
+    if (!enabled) {
+      this
+    } else {
+      this.clickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+          onClick = onClick,
+      )
+    }
