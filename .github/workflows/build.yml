@@ -38,7 +38,7 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
   bridge:
-    name: Check bridge
+    name: Bridge tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,13 +48,12 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install fastapi uvicorn httpx numpy
+        run: pip install -r bridge/requirements.txt
 
-      - name: Syntax and import check
+      - name: Run the test suite
         run: |
-          python -c "import ast; ast.parse(open('bridge/bridge.py').read())"
-          cd bridge && python -c "import bridge" 2>/dev/null || \
-            echo "import check skipped (module runs on __main__)"
+          cd bridge
+          python -m pytest tests/ -v
 
       - name: Health endpoint boots
         run: |

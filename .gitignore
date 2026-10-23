@@ -26,3 +26,9 @@ local.properties
 __pycache__/
 *.py[cod]
 .venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
