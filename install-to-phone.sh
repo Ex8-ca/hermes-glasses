@@ -11,7 +11,8 @@
 
 set -uo pipefail
 
-APK="/home/marc/nvme-data/projects/hermes-glasses/app/build/outputs/apk/debug/app-debug.apk"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APK="${REPO_DIR}/app/build/outputs/apk/debug/app-debug.apk"
 PKG="com.chillygeek.hermesglasses"
 # Known Pixel 10 Pro XL address from earlier; DHCP may hand it a new one.
 KNOWN_IPS=("192.168.1.169")
@@ -32,9 +33,8 @@ log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [[ ! -f "$APK" ]]; then
   log "APK missing: $APK"
   log "build it with:"
-  log "  cd /home/marc/nvme-data/projects/hermes-glasses && \\"
-  log "    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \\"
-  log "    ANDROID_HOME=/home/marc/Android/Sdk ./gradlew :app:assembleDebug"
+  log "  cd $REPO_DIR && \\"
+  log "    ./gradlew :app:assembleDebug"
   exit 1
 fi
 
