@@ -1,0 +1,28 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+*.apk
+*.aab
+
+# Local machine config — contains the bridge URL and Meta credentials
+local.properties
+
+# Secrets — the bridge reads API keys from ~/.hermes/.env at runtime,
+# never from the repo.
+.env
+*.env
+!*.env.example
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
