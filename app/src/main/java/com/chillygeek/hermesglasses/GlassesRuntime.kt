@@ -33,6 +33,12 @@ object GlassesRuntime {
     private set
   lateinit var router: AudioRouter
     private set
+  lateinit var mock: MockGlasses
+    private set
+
+  /** True when running against simulated glasses rather than hardware. */
+  @Volatile var usingMockGlasses: Boolean = false
+    private set
 
   /** Where the microphone audio comes from. */
   @Volatile var micSource: AudioRouter.MicSource = AudioRouter.MicSource.HEADSET
@@ -67,6 +73,7 @@ object GlassesRuntime {
 
     bridge = BridgeClient()
     router = AudioRouter(context, scope)
+    mock = MockGlasses(context, scope)
     player = SpeechPlayer(context, router)
     splitter = UtteranceSplitter()
     controller = GlassesController(context, scope)
@@ -92,6 +99,31 @@ object GlassesRuntime {
       router.stopCapture()
     } else {
       router.startCapture(source) { pcm -> onMicAudio(pcm) }
+    }
+  }
+
+  /**
+   * Turn the simulated glasses on or off.
+   *
+   * With mock glasses enabled the DAT session runs against a simulated device,
+   * so registration, camera attach and stream start can all be exercised
+   * without wearing anything. Pairing is automatic, which skips the Meta AI app
+   * round trip.
+   */
+  fun setMockGlasses(enabled: Boolean): Boolean {
+    return if (enabled) {
+      val ok = mock.enable(initiallyRegistered = true, permissionsGranted = true)
+      if (ok) {
+        usingMockGlasses = true
+        controller.datReady = true
+        mock.pairAndActivate()
+      }
+      ok
+    } else {
+      mock.disable()
+      usingMockGlasses = false
+      controller.datReady = false
+      true
     }
   }
 

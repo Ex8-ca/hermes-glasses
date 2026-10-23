@@ -76,8 +76,10 @@ fun GlassesScreen(
     micSource: AudioRouter.MicSource,
     outputSink: AudioRouter.OutputSink,
     headsetAvailable: Boolean,
+    mockGlasses: Boolean,
     onMicSourceChange: (AudioRouter.MicSource) -> Unit,
     onOutputSinkChange: (AudioRouter.OutputSink) -> Unit,
+    onMockGlassesChange: (Boolean) -> Unit,
     onRegister: () -> Unit,
     onToggleStream: () -> Unit,
     onTalkDown: () -> Unit,
@@ -150,8 +152,10 @@ fun GlassesScreen(
             micSource = micSource,
             outputSink = outputSink,
             headsetAvailable = headsetAvailable,
+            mockGlasses = mockGlasses,
             onMicSourceChange = onMicSourceChange,
             onOutputSinkChange = onOutputSinkChange,
+            onMockGlassesChange = onMockGlassesChange,
         )
         Spacer(Modifier.height(8.dp))
       }
@@ -299,8 +303,10 @@ private fun AudioRouting(
     micSource: AudioRouter.MicSource,
     outputSink: AudioRouter.OutputSink,
     headsetAvailable: Boolean,
+    mockGlasses: Boolean,
     onMicSourceChange: (AudioRouter.MicSource) -> Unit,
     onOutputSinkChange: (AudioRouter.OutputSink) -> Unit,
+    onMockGlassesChange: (Boolean) -> Unit,
 ) {
   Column(
       modifier =
@@ -353,6 +359,18 @@ private fun AudioRouting(
           color = AppColor.Yellow,
       )
     }
+
+    Spacer(Modifier.height(2.dp))
+
+    // Simulated glasses — lets the whole DAT path be exercised without
+    // wearing anything.
+    RoutingRow(
+        label = "Glasses",
+        options = listOf(true to "Simulated", false to "Real"),
+        selected = mockGlasses,
+        enabledOptions = emptySet(),
+        onSelect = onMockGlassesChange,
+    )
   }
 }
 

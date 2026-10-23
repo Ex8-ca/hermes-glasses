@@ -196,6 +196,17 @@ smoother.
 If you would rather not buy anything, the phone mic works today and the glasses mic
 still works via the in-band path — it is just noisy.
 
+### Testing without glasses
+
+The **Glasses: Simulated / Real** toggle in the app swaps the real glasses for
+Meta's MockDeviceKit — a simulated Ray-Ban Meta that generates a video feed.
+Registration, session lifecycle, camera attach, and stream start all run for
+real; only the hardware is fake.
+
+This is the only way to exercise the DAT path without wearing anything, and it
+is worth doing before you put the glasses on, because it is exactly the path
+with the firmware-129 landmines.
+
 ### Turning the stream on and off
 
 - **Start** / **Stop** — opens and closes the DAT session (and the foreground

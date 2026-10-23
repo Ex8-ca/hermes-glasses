@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
         var micSource by remember { mutableStateOf(GlassesRuntime.micSource) }
         var outputSink by remember { mutableStateOf(GlassesRuntime.outputSink) }
         var headsetAvailable by remember { mutableStateOf(false) }
+        var mockGlasses by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
           GlassesRuntime.controller.state.collect { s ->
@@ -134,6 +135,7 @@ class MainActivity : ComponentActivity() {
             micSource = micSource,
             outputSink = outputSink,
             headsetAvailable = headsetAvailable,
+            mockGlasses = mockGlasses,
             onMicSourceChange = { source ->
               micSource = source
               GlassesRuntime.applyMicSource(source)
@@ -141,6 +143,10 @@ class MainActivity : ComponentActivity() {
             onOutputSinkChange = { sink ->
               outputSink = sink
               GlassesRuntime.outputSink = sink
+            },
+            onMockGlassesChange = { enabled ->
+              mockGlasses = enabled
+              GlassesRuntime.setMockGlasses(enabled)
             },
             onRegister = { register() },
             onToggleStream = { toggleStreaming() },
