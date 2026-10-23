@@ -22,15 +22,34 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      # setup-android can hang on an interactive "Review licenses (y/N)?"
-      # prompt, which fails the job. Accept every license up front.
-      - name: Accept Android SDK licenses
+      # The runner's preinstalled sdkmanager is the wrong version and hangs on
+      # an interactive "Review licenses (y/N)?" prompt, which fails the job.
+      # Install a pinned cmdline-tools and accept the licenses non-interactively.
+      - name: Install Android SDK
+        env:
+          CMDLINE_TOOLS: 11076708
+          CMDLINE_SHA256: 2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
         run: |
+          set -euo pipefail
+          SDK_ROOT="$ANDROID_SDK_ROOT"
+          echo "SDK root: $SDK_ROOT"
+
+          curl -fsSL -o /tmp/cmdline-tools.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS}_latest.zip"
+          echo "${CMDLINE_SHA256}  /tmp/cmdline-tools.zip" | sha256sum -c -
+
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          rm -rf "$SDK_ROOT/cmdline-tools/latest" /tmp/cmdline-tools
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
+          mv /tmp/cmdline-tools/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+
+          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          sdkmanager --version
+
+          # Accept every license without a prompt.
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --licenses < /dev/null > /dev/null 2>&1 || true
+
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;35.0.0"
 
       - name: Provide SDK location
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" >> local.properties
