@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
         var outputSink by remember { mutableStateOf(GlassesRuntime.outputSink) }
         var headsetAvailable by remember { mutableStateOf(false) }
         var mockGlasses by remember { mutableStateOf(false) }
+        var bridgeUrl by remember { mutableStateOf(BridgeConfig.url()) }
 
         LaunchedEffect(Unit) {
           GlassesRuntime.controller.state.collect { s ->
@@ -147,6 +148,13 @@ class MainActivity : ComponentActivity() {
             onMockGlassesChange = { enabled ->
               mockGlasses = enabled
               GlassesRuntime.setMockGlasses(enabled)
+            },
+            bridgeUrl = bridgeUrl,
+            onBridgeUrlChange = { value ->
+              bridgeUrl = value
+              // Persist only a valid address — a half-typed URL would leave
+              // the app pointed at nothing.
+              BridgeConfig.setUrl(value)
             },
             onRegister = { register() },
             onToggleStream = { toggleStreaming() },

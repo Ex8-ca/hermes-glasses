@@ -39,6 +39,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -80,6 +81,8 @@ fun GlassesScreen(
     onMicSourceChange: (AudioRouter.MicSource) -> Unit,
     onOutputSinkChange: (AudioRouter.OutputSink) -> Unit,
     onMockGlassesChange: (Boolean) -> Unit,
+    bridgeUrl: String,
+    onBridgeUrlChange: (String) -> Unit,
     onRegister: () -> Unit,
     onToggleStream: () -> Unit,
     onTalkDown: () -> Unit,
@@ -156,6 +159,26 @@ fun GlassesScreen(
             onMicSourceChange = onMicSourceChange,
             onOutputSinkChange = onOutputSinkChange,
             onMockGlassesChange = onMockGlassesChange,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // ------------------------------------------------- bridge address
+        // A released APK cannot know the installer's network, so the bridge
+        // address has to be settable at runtime.
+        Text(
+            text = "BRIDGE",
+            style = MaterialTheme.typography.labelSmall,
+            color = AppColor.OnSurfaceMuted,
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = bridgeUrl,
+            onValueChange = onBridgeUrlChange,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodySmall,
+            label = { Text("Bridge address", style = MaterialTheme.typography.labelSmall) },
+            placeholder = { Text("http://192.168.1.3:8790", style = MaterialTheme.typography.labelSmall) },
         )
         Spacer(Modifier.height(8.dp))
       }

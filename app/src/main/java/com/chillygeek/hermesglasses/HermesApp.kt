@@ -23,12 +23,14 @@ class HermesApp : Application() {
   companion object {
     private const val TAG = "HermesCrash"
 
-    /** Where the crash report is posted. Matches BuildConfig.BRIDGE_URL. */
-    private fun bridgeUrl(): String = BuildConfig.BRIDGE_URL
+    /** Where the crash report is posted. Matches the configured bridge URL. */
+    private fun bridgeUrl(): String = BridgeConfig.url()
   }
 
   override fun onCreate() {
     super.onCreate()
+    // The bridge URL must be readable before anything can report a crash.
+    BridgeConfig.init(this)
     val previous = Thread.getDefaultUncaughtExceptionHandler()
     Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
       try {

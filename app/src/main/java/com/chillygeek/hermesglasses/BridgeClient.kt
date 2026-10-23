@@ -24,18 +24,27 @@ import kotlin.coroutines.suspendCoroutine
  * Bluetooth + camera client. That split matters: the 5080 has the GPU, the models,
  * and the API keys, and the phone only has to move bytes.
  */
-class BridgeClient(private val baseUrl: String = BuildConfig.BRIDGE_URL) {
+class BridgeClient(overrideUrl: String? = null) {
 
   companion object {
     private const val TAG = "BridgeClient"
     private const val CLIENT_ID = "pixel10proxl"
   }
 
+  /**
+   * The bridge address.
+   *
+   * Read from [BridgeConfig] on every request rather than captured once, so
+   * changing the address in the app takes effect without a restart.
+   */
+  private val overrideUrl: String? = overrideUrl
+  private val baseUrl: String get() = overrideUrl ?: BridgeConfig.url()
+
   private val http = OkHttpClient.Builder()
-    .connectTimeout(10, TimeUnit.SECONDS)
-    .readTimeout(180, TimeUnit.SECONDS)
-    .writeTimeout(60, TimeUnit.SECONDS)
-    .build()
+      .connectTimeout(10, TimeUnit.SECONDS)
+      .readTimeout(180, TimeUnit.SECONDS)
+      .writeTimeout(60, TimeUnit.SECONDS)
+      .build()
 
   private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
